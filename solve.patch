@@ -1,0 +1,228 @@
+diff -rupNEZbB OriginalSources/usr/include/minix/callnr.h Sources/usr/include/minix/callnr.h
+--- OriginalSources/usr/include/minix/callnr.h	2014-09-14 11:00:44.000000000 -0700
++++ Sources/usr/include/minix/callnr.h	2021-04-29 01:56:22.271487385 -0700
+@@ -58,8 +58,9 @@
+ #define PM_GETEPINFO		(PM_BASE + 45)
+ #define PM_GETPROCNR		(PM_BASE + 46)
+ #define PM_GETSYSINFO		(PM_BASE + 47)
++#define PM_NEGATEEXIT       (PM_BASE + 48)
+ 
+-#define NR_PM_CALLS		48	/* highest number from base plus one */
++#define NR_PM_CALLS		49	/* highest number from base plus one */
+ 
+ /*===========================================================================*
+  *				Calls to VFS				     *
+diff -rupNEZbB OriginalSources/usr/include/minix/ipc.h Sources/usr/include/minix/ipc.h
+--- OriginalSources/usr/include/minix/ipc.h	2014-09-14 11:00:44.000000000 -0700
++++ Sources/usr/include/minix/ipc.h	2021-04-29 10:00:38.513875144 -0700
+@@ -588,6 +588,13 @@ typedef struct {
+ _ASSERT_MSG_SIZE(mess_lc_pm_waitpid);
+ 
+ typedef struct {
++	int negate;
++
++	uint8_t padding[52];
++} mess_lc_pm_negateexit;
++_ASSERT_MSG_SIZE(mess_lc_pm_negateexit);
++
++typedef struct {
+ 	cp_grant_id_t grant;
+ 	vir_bytes tm;			/* struct tm * */
+ 	int flags;
+@@ -2251,6 +2258,7 @@ typedef struct {
+ 		mess_vm_vfs_mmap	m_vm_vfs_mmap;
+ 		mess_vmmcp		m_vmmcp;
+ 		mess_vmmcp_reply	m_vmmcp_reply;
++		mess_lc_pm_negateexit	m_lc_pm_negateexit;
+ 
+ 		u8_t size[56];	/* message payload may have 56 bytes at most */
+ 	};
+diff -rupNEZbB OriginalSources/usr/include/unistd.h Sources/usr/include/unistd.h
+--- OriginalSources/usr/include/unistd.h	2014-09-14 11:00:42.000000000 -0700
++++ Sources/usr/include/unistd.h	2021-04-29 09:59:41.247951085 -0700
+@@ -411,5 +411,7 @@ extern	 int optreset;		/* getopt(3) exte
+ extern	 char *suboptarg;	/* getsubopt(3) external variable */
+ #endif
+ 
++int negateexit(int);
++
+ __END_DECLS
+ #endif /* !_UNISTD_H_ */
+diff -rupNEZbB OriginalSources/usr/src/include/unistd.h Sources/usr/src/include/unistd.h
+--- OriginalSources/usr/src/include/unistd.h	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/include/unistd.h	2021-04-29 09:59:52.816341443 -0700
+@@ -411,5 +411,7 @@ extern	 int optreset;		/* getopt(3) exte
+ extern	 char *suboptarg;	/* getsubopt(3) external variable */
+ #endif
+ 
++int negateexit(int);
++
+ __END_DECLS
+ #endif /* !_UNISTD_H_ */
+diff -rupNEZbB OriginalSources/usr/src/lib/libc/misc/Makefile.inc Sources/usr/src/lib/libc/misc/Makefile.inc
+--- OriginalSources/usr/src/lib/libc/misc/Makefile.inc	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/lib/libc/misc/Makefile.inc	2021-04-29 10:04:52.142188348 -0700
+@@ -7,4 +7,4 @@
+ SRCS+=	initfini.c
+ 
+ # for -fstack-protector
+-SRCS+=	stack_protector.c
++SRCS+=	stack_protector.c negateexit.c
+diff -rupNEZbB OriginalSources/usr/src/lib/libc/misc/negateexit.c Sources/usr/src/lib/libc/misc/negateexit.c
+--- OriginalSources/usr/src/lib/libc/misc/negateexit.c	1969-12-31 16:00:00.000000000 -0800
++++ Sources/usr/src/lib/libc/misc/negateexit.c	2021-04-29 10:27:49.620878820 -0700
+@@ -0,0 +1,12 @@
++#include "errno.h"
++#include <lib.h>
++
++int negateexit(int negate) {
++    message m;
++    m.m_lc_pm_negateexit.negate = negate;
++    if (!_syscall(PM_PROC_NR, PM_NEGATEEXIT, &m)) {
++        errno = "ENOSYS";
++        return -1;
++    }
++    return m.m_lc_pm_negateexit.negate;
++}
+\ No newline at end of file
+diff -rupNEZbB OriginalSources/usr/src/minix/include/minix/callnr.h Sources/usr/src/minix/include/minix/callnr.h
+--- OriginalSources/usr/src/minix/include/minix/callnr.h	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/minix/include/minix/callnr.h	2021-04-29 01:54:47.968046023 -0700
+@@ -58,8 +58,9 @@
+ #define PM_GETEPINFO		(PM_BASE + 45)
+ #define PM_GETPROCNR		(PM_BASE + 46)
+ #define PM_GETSYSINFO		(PM_BASE + 47)
++#define PM_NEGATEEXIT       (PM_BASE + 48)
+ 
+-#define NR_PM_CALLS		48	/* highest number from base plus one */
++#define NR_PM_CALLS		49	/* highest number from base plus one */
+ 
+ /*===========================================================================*
+  *				Calls to VFS				     *
+diff -rupNEZbB OriginalSources/usr/src/minix/include/minix/ipc.h Sources/usr/src/minix/include/minix/ipc.h
+--- OriginalSources/usr/src/minix/include/minix/ipc.h	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/minix/include/minix/ipc.h	2021-04-29 10:00:43.442039782 -0700
+@@ -588,6 +588,13 @@ typedef struct {
+ _ASSERT_MSG_SIZE(mess_lc_pm_waitpid);
+ 
+ typedef struct {
++	int negate;
++
++	uint8_t padding[52];
++} mess_lc_pm_negateexit;
++_ASSERT_MSG_SIZE(mess_lc_pm_negateexit);
++
++typedef struct {
+ 	cp_grant_id_t grant;
+ 	vir_bytes tm;			/* struct tm * */
+ 	int flags;
+@@ -2251,6 +2258,7 @@ typedef struct {
+ 		mess_vm_vfs_mmap	m_vm_vfs_mmap;
+ 		mess_vmmcp		m_vmmcp;
+ 		mess_vmmcp_reply	m_vmmcp_reply;
++		mess_lc_pm_negateexit	m_lc_pm_negateexit;
+ 
+ 		u8_t size[56];	/* message payload may have 56 bytes at most */
+ 	};
+diff -rupNEZbB OriginalSources/usr/src/minix/servers/pm/forkexit.c Sources/usr/src/minix/servers/pm/forkexit.c
+--- OriginalSources/usr/src/minix/servers/pm/forkexit.c	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/minix/servers/pm/forkexit.c	2021-04-29 10:55:45.047730172 -0700
+@@ -100,7 +100,7 @@ int do_fork()
+   }
+ 
+   /* Inherit only these flags. In normal fork(), PRIV_PROC is not inherited. */
+-  rmc->mp_flags &= (IN_USE|DELAY_CALL|TAINTED);
++  rmc->mp_flags &= (IN_USE|DELAY_CALL|TAINTED|IF_NEGATE);
+   rmc->mp_child_utime = 0;		/* reset administration */
+   rmc->mp_child_stime = 0;		/* reset administration */
+   rmc->mp_exitstatus = 0;
+@@ -241,6 +241,14 @@ int do_exit()
+       sys_kill(mp->mp_endpoint, SIGKILL);
+   }
+   else {
++      if (mp->mp_flags & IF_NEGATE) {
++        if (m_in.m_lc_pm_exit.status != 0) {
++          m_in.m_lc_pm_exit.status = 0;
++        }
++        else {
++          m_in.m_lc_pm_exit.status = 1;
++        }
++      }
+       exit_proc(mp, m_in.m_lc_pm_exit.status, FALSE /*dump_core*/);
+   }
+   return(SUSPEND);		/* can't communicate from beyond the grave */
+diff -rupNEZbB OriginalSources/usr/src/minix/servers/pm/Makefile Sources/usr/src/minix/servers/pm/Makefile
+--- OriginalSources/usr/src/minix/servers/pm/Makefile	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/minix/servers/pm/Makefile	2021-04-29 02:23:25.226981899 -0700
+@@ -4,7 +4,7 @@
+ PROG=	pm
+ SRCS=	main.c forkexit.c exec.c time.c alarm.c \
+ 	signal.c utility.c table.c trace.c getset.c misc.c \
+-	profile.c mcontext.c schedule.c
++	profile.c mcontext.c schedule.c negateexit.c
+ 
+ DPADD+=	${LIBSYS} ${LIBTIMERS}
+ LDADD+=	-lsys -ltimers
+diff -rupNEZbB OriginalSources/usr/src/minix/servers/pm/mproc.h Sources/usr/src/minix/servers/pm/mproc.h
+--- OriginalSources/usr/src/minix/servers/pm/mproc.h	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/minix/servers/pm/mproc.h	2021-04-29 10:00:52.626346222 -0700
+@@ -91,5 +91,6 @@ EXTERN struct mproc {
+ #define TRACE_ZOMBIE	0x10000	/* waiting for tracer to issue WAITPID call */
+ #define DELAY_CALL	0x20000	/* waiting for call before sending signal */
+ #define TAINTED		0x40000 /* process is 'tainted' */
++#define IF_NEGATE 0x80000
+ 
+ #define MP_MAGIC	0xC0FFEE0
+diff -rupNEZbB OriginalSources/usr/src/minix/servers/pm/negateexit.c Sources/usr/src/minix/servers/pm/negateexit.c
+--- OriginalSources/usr/src/minix/servers/pm/negateexit.c	1969-12-31 16:00:00.000000000 -0800
++++ Sources/usr/src/minix/servers/pm/negateexit.c	2021-04-29 10:27:15.291838139 -0700
+@@ -0,0 +1,27 @@
++#include "pm.h"
++#include "mproc.h"
++#include <lib.h>
++
++int do_negateexit(void) {
++    message mes;
++    
++    if (mp->mp_flags & IF_NEGATE) {
++        mes.m_lc_pm_negateexit.negate = 1;
++    }
++    else {
++        mes.m_lc_pm_negateexit.negate = 0;
++    }
++    mp->mp_reply = mes;
++
++    if (m_in.m_lc_pm_negateexit.negate != 0) {
++        if (!(mp->mp_flags & IF_NEGATE)) {
++            mp->mp_flags |= IF_NEGATE;
++        }
++    }
++    else {
++        if (mp->mp_flags & IF_NEGATE) {
++            mp->mp_flags ^= IF_NEGATE;
++        }
++    }
++    return 0;
++}
+\ No newline at end of file
+diff -rupNEZbB OriginalSources/usr/src/minix/servers/pm/proto.h Sources/usr/src/minix/servers/pm/proto.h
+--- OriginalSources/usr/src/minix/servers/pm/proto.h	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/minix/servers/pm/proto.h	2021-04-29 02:02:46.595664032 -0700
+@@ -89,3 +89,6 @@ struct mproc *find_proc(pid_t lpid);
+ int nice_to_priority(int nice, unsigned *new_q);
+ int pm_isokendpt(int ep, int *proc);
+ void tell_vfs(struct mproc *rmp, message *m_ptr);
++
++/* negateexit.c */
++int do_negateexit(void);
+diff -rupNEZbB OriginalSources/usr/src/minix/servers/pm/table.c Sources/usr/src/minix/servers/pm/table.c
+--- OriginalSources/usr/src/minix/servers/pm/table.c	2014-09-13 23:56:50.000000000 -0700
++++ Sources/usr/src/minix/servers/pm/table.c	2021-04-29 08:40:29.954723380 -0700
+@@ -58,5 +58,6 @@ int (* const call_vec[NR_PM_CALLS])(void
+ 	CALL(PM_EXEC_RESTART)	= do_execrestart,
+ 	CALL(PM_GETEPINFO)	= do_getepinfo,		/* getepinfo(2) */
+ 	CALL(PM_GETPROCNR)	= do_getprocnr,		/* getprocnr(2) */
+-	CALL(PM_GETSYSINFO)	= do_getsysinfo		/* getsysinfo(2) */
++	CALL(PM_GETSYSINFO)	= do_getsysinfo,	/* getsysinfo(2) */
++	CALL(PM_NEGATEEXIT) = do_negateexit
+ };
